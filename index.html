@@ -258,6 +258,49 @@
     color:var(--fog);
     margin-bottom:6px;
   }
+
+  /* ---------- CTA / source link ---------- */
+  .cta-row{display:flex; gap:12px; flex-wrap:wrap; margin-top:26px;}
+  .cta{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    padding:10px 16px;
+    border-radius:6px;
+    text-decoration:none;
+    border:1px solid var(--line);
+  }
+  .cta.primary{background:rgba(92,200,194,.08); color:var(--cyan); border-color:rgba(92,200,194,.45); font-weight:600;}
+  .cta.ghost{color:var(--fog);}
+  .cta .fillnote{color:var(--amber);}
+
+  /* ---------- scope note ---------- */
+  .scope-note{
+    margin-top:22px;
+    padding:14px 16px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:13.5px;
+    color:var(--fog);
+    max-width:60ch;
+  }
+  .scope-note b{color:var(--paper);}
+
+  /* ---------- quantified stat row ---------- */
+  .stat-row{
+    display:flex; flex-wrap:wrap; gap:10px;
+    margin:16px 0 4px;
+  }
+  .stat{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    padding:6px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    color:var(--fog);
+  }
+  .stat .fillnote{color:var(--amber);}
 </style>
 </head>
 <body>
@@ -291,6 +334,7 @@
         <div class="bar"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
         <div class="body" id="termBody"></div>
       </div>
+
     </section>
 
     <!-- OVERVIEW -->
@@ -307,6 +351,15 @@
       <div class="arch-note">
         <div class="mono">App → Manager SDK → SystemService → AIDL HAL → SELinux Policy → Kernel/Driver</div>
       </div>
+
+      <div class="scope-note">
+        <b>範圍說明——</b>這是一個個人專案，在 Cuttlefish 虛擬裝置上建置與驗證，
+        內容涵蓋核心 AOSP 框架層工作(SystemService / HAL / SELinux)，
+        不包含 AAOS 專屬元件，例如 CarService 或 VHAL。
+      </div>
+
+      <a class="cta ghost" href="https://app.notion.com/p/shawnoo/AOSP-Framework-3a10e565be8e8021abb0df448e9eac2c" style="margin-top:14px; display:inline-flex;" target="_blank"> <span class="fillnote">查看程式碼異動</span></a>
+
     </section>
 
     <!-- MILESTONES -->
@@ -317,7 +370,7 @@
       <div class="milestone" data-layers="service">
         <div class="m-head">
           <h3>M1 · SystemService 基礎建設</h3>
-          <span class="badge shipped">已完成</span>
+          <span class="badge shipped">已驗證 · Cuttlefish</span>
         </div>
         <div class="tag-row">
           <span class="tag">@SystemApi</span>
@@ -344,12 +397,13 @@
             <li><code>framework.jar</code> 的 API snapshot 驗證抓到與公開介面不一致的地方——這一關會在編譯階段就失敗，不會拖到執行期才出問題。</li>
           </ul>
         </div>
+
       </div>
 
       <div class="milestone" data-layers="hal,selinux">
         <div class="m-head">
           <h3>M2 · AIDL HAL + SELinux 雙閘門模型</h3>
-          <span class="badge shipped">已完成</span>
+          <span class="badge shipped">已驗證 · Cuttlefish</span>
         </div>
         <div class="tag-row">
           <span class="tag">AIDL HAL</span>
@@ -486,9 +540,8 @@
     <footer>
       <div class="mono">DeviceGuardService — Android Framework / AOSP 作品集專案</div>
       <p style="margin:10px 0 20px;">十年應用層開發經驗，現在反哺框架層。</p>
-      <a href="#" class="fill">[ github.com/your-handle ]</a>
-      <a href="#" class="fill">[ linkedin.com/in/your-handle ]</a>
-      <a href="#" class="fill">[ your-email@example.com ]</a>
+      <a href="#" class="fill">[ https://www.linkedin.com/in/shawnhsu1/ ]</a>
+      <a href="#" class="fill">[ shawn.mingyuanhsu@gmail.com ]</a>
     </footer>
   </main>
 </div>
