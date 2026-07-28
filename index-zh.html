@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeviceGuardService — 從 App 到 Kernel 的垂直切片</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0B1220;
+    --surface: #111B2E;
+    --surface-2: #182645;
+    --surface-hi: #1B2846;
+    --line: #26314D;
+    --cyan: #5CC8C2;
+    --amber: #E8A33D;
+    --red: #D9695F;
+    --fog: #8A94A6;
+    --paper: #E7EAF0;
+    --stack-w: 268px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--paper);
+    font-family:'Noto Sans TC', 'IBM Plex Sans', sans-serif;
+    line-height:1.8;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--cyan); color:var(--bg);}
+
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    font-size:12px;
+    color:var(--cyan);
+  }
+  h1,h2,h3{
+    font-family:'Noto Sans TC', 'Space Grotesk', sans-serif;
+    font-weight:700;
+    margin:0 0 .4em;
+    line-height:1.3;
+  }
+  a{color:var(--cyan);}
+  code, .mono{font-family:'IBM Plex Mono', monospace;}
+
+  /* ---------- layout shell ---------- */
+  .shell{
+    display:grid;
+    grid-template-columns: var(--stack-w) 1fr;
+    max-width:1180px;
+    margin:0 auto;
+  }
+  @media (max-width: 880px){
+    .shell{grid-template-columns: 1fr;}
+  }
+
+  /* ---------- stack rail (signature element) ---------- */
+  .stack-rail{
+    position:sticky;
+    top:0;
+    align-self:start;
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:2px;
+    padding:32px 18px;
+  }
+  @media (max-width: 880px){
+    .stack-rail{
+      position:static;
+      height:auto;
+      flex-direction:row;
+      overflow-x:auto;
+      padding:16px;
+      gap:6px;
+      border-bottom:1px solid var(--line);
+    }
+  }
+  .layer{
+    padding:12px 14px;
+    border-left:2px solid var(--line);
+    background:transparent;
+    transition:all .35s ease;
+    opacity:.45;
+  }
+  @media (max-width:880px){
+    .layer{border-left:none; border-bottom:2px solid var(--line); flex:0 0 auto; white-space:nowrap;}
+  }
+  .layer .name{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    letter-spacing:.06em;
+    color:var(--fog);
+    transition:color .35s ease;
+  }
+  .layer.active{
+    opacity:1;
+    border-left-color:var(--cyan);
+    background:linear-gradient(90deg, rgba(92,200,194,.08), transparent);
+  }
+  @media (max-width:880px){
+    .layer.active{border-bottom-color:var(--cyan); background:none;}
+  }
+  .layer.active .name{color:var(--paper);}
+  .layer.active .name::before{content:"▸ ";color:var(--cyan);}
+
+  /* ---------- main column ---------- */
+  main{padding: 0 28px 120px; border-left:1px solid var(--line);}
+  @media (max-width:880px){ main{border-left:none; padding:0 20px 100px;} }
+
+  section{padding:90px 0; border-bottom:1px solid var(--line);}
+  section:last-of-type{border-bottom:none;}
+
+  /* ---------- hero ---------- */
+  .hero{padding-top:70px;}
+  .hero h1{font-size:clamp(30px, 4.4vw, 48px); max-width:15ch;}
+  .hero .lede{max-width:52ch; color:var(--fog); font-size:16.5px; margin-top:14px;}
+
+  .terminal{
+    margin-top:34px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:hidden;
+    max-width:640px;
+  }
+  .terminal .bar{
+    display:flex; gap:6px; padding:10px 12px;
+    background:var(--surface-hi);
+    border-bottom:1px solid var(--line);
+  }
+  .terminal .dot{width:9px;height:9px;border-radius:50%; background:#3A4666;}
+  .terminal .body{
+    padding:18px 18px 22px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    min-height:150px;
+    color:var(--fog);
+  }
+  .terminal .body .ln{white-space:pre-wrap; margin:0 0 6px;}
+  .terminal .E{color:var(--red);}
+  .terminal .W{color:var(--amber);}
+  .terminal .I{color:var(--cyan);}
+  .terminal .caret{display:inline-block; width:7px; background:var(--cyan); animation:blink 1s step-end infinite;}
+  @keyframes blink{50%{opacity:0;}}
+
+  /* ---------- milestone cards ---------- */
+  .m-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+  .badge{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+    padding:3px 9px;
+    border-radius:100px;
+    border:1px solid var(--line);
+    color:var(--fog);
+    letter-spacing:.04em;
+  }
+  .badge.shipped{color:var(--cyan); border-color:rgba(92,200,194,.4);}
+  .badge.roadmap{color:var(--amber); border-color:rgba(232,163,61,.4);}
+
+  .tag-row{display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 18px;}
+  .tag{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--fog);
+    border:1px solid var(--line);
+    padding:3px 8px;
+    border-radius:4px;
+  }
+
+  ul.detail{margin:0; padding-left:1.1em;}
+  ul.detail li{margin-bottom:8px; color:var(--paper); font-size:15px;}
+  ul.detail li::marker{color:var(--cyan);}
+
+  .note{
+    margin-top:18px;
+    padding:14px 16px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-left:2px solid var(--amber);
+    border-radius:0 6px 6px 0;
+    font-size:14px;
+    color:var(--fog);
+  }
+  .note b{color:var(--paper); font-weight:600;}
+
+  .milestone{margin-bottom:56px;}
+  .milestone:last-child{margin-bottom:0;}
+
+  .phase{margin-top:18px; padding-left:16px; border-left:2px solid var(--line);}
+  .phase-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    margin-bottom:8px;
+  }
+  .phase-label.build{color:var(--cyan);}
+  .phase-label.verify{color:var(--amber);}
+  .phase-label.issue{color:var(--red);}
+  .phase p, .phase ul{margin:0;}
+  .phase ul{padding-left:1.1em;}
+  .phase li{margin-bottom:6px; font-size:14.5px; color:var(--paper);}
+  .phase li::marker{color:var(--fog);}
+  .phase p{font-size:14.5px; color:var(--paper);}
+
+  .arch-note{
+    margin-top:26px;
+    padding:20px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+  }
+  .arch-note .mono{color:var(--cyan); font-size:13px;}
+
+  /* ---------- debug log grid ---------- */
+  .log-grid{display:grid; gap:16px;}
+  .log-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:18px 20px;
+  }
+  .log-card .tag-line{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--red); margin-bottom:8px;}
+  .log-card h3{font-size:16.5px; margin-bottom:8px;}
+  .log-card p{margin:0; color:var(--fog); font-size:14.5px;}
+
+  /* ---------- env grid ---------- */
+  .env-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:24px;}
+  @media (max-width:600px){.env-grid{grid-template-columns:1fr;}}
+  .env-item{
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:14px 16px;
+    background:var(--surface);
+  }
+  .env-item .k{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--cyan); letter-spacing:.05em;}
+  .env-item .v{margin-top:4px; font-size:14px; color:var(--paper);}
+
+  footer{
+    padding:70px 0 40px;
+    color:var(--fog);
+    font-size:14px;
+  }
+  footer .fill{color:var(--amber);}
+  footer a{margin-right:18px;}
+
+  .section-num{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--fog);
+    margin-bottom:6px;
+  }
+
+  /* ---------- CTA / source link ---------- */
+  .cta-row{display:flex; gap:12px; flex-wrap:wrap; margin-top:26px;}
+  .cta{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    padding:10px 16px;
+    border-radius:6px;
+    text-decoration:none;
+    border:1px solid var(--line);
+  }
+  .cta.primary{background:rgba(92,200,194,.08); color:var(--cyan); border-color:rgba(92,200,194,.45); font-weight:600;}
+  .cta.ghost{color:var(--fog);}
+  .cta .fillnote{color:var(--amber);}
+
+  /* ---------- scope note ---------- */
+  .scope-note{
+    margin-top:22px;
+    padding:14px 16px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:13.5px;
+    color:var(--fog);
+    max-width:60ch;
+  }
+  .scope-note b{color:var(--paper);}
+
+  /* ---------- quantified stat row ---------- */
+  .stat-row{
+    display:flex; flex-wrap:wrap; gap:10px;
+    margin:16px 0 4px;
+  }
+  .stat{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    padding:6px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    color:var(--fog);
+  }
+  .stat .fillnote{color:var(--amber);}
+</style>
+</head>
+<body>
+
+<a href="index.html" style="position:fixed; top:16px; right:18px; z-index:50; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8A94A6; border:1px solid #26314D; padding:5px 10px; border-radius:100px; background:#111B2E; text-decoration:none;">EN</a>
+
+<div class="shell">
+  <!-- signature: sticky layer stack, lights up with active section -->
+  <nav class="stack-rail" id="stackRail" aria-label="系統分層索引">
+    <div class="layer" data-layer="app"><span class="name">APP 應用層</span></div>
+    <div class="layer" data-layer="sdk"><span class="name">MANAGER SDK</span></div>
+    <div class="layer" data-layer="service"><span class="name">SYSTEM SERVICE</span></div>
+    <div class="layer" data-layer="hal"><span class="name">AIDL HAL</span></div>
+    <div class="layer" data-layer="selinux"><span class="name">SELINUX POLICY</span></div>
+    <div class="layer" data-layer="kernel"><span class="name">KERNEL / DRIVER</span></div>
+  </nav>
+
+  <main>
+    <!-- HERO -->
+    <section class="hero" data-layers="app,sdk,service,hal,selinux,kernel">
+      <div class="eyebrow">Android Framework / AOSP — 開發紀錄</div>
+      <h1>一個功能，六層架構，沒有捷徑。</h1>
+      <p class="lede">
+        DeviceGuardService 是一個貫穿 Android 系統堆疊的完整垂直切片——
+        一個應用層看到的政策功能，一路實作到 SystemServer 註冊的系統服務、
+        AIDL HAL 邊界，以及真正負責強制執行的 SELinux 政策。
+        基於 Android 14 開發，於 Cuttlefish 上測試驗證。
+      </p>
+
+      <div class="terminal">
+        <div class="bar"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+        <div class="body" id="termBody"></div>
+      </div>
+
+    </section>
+
+    <!-- OVERVIEW -->
+    <section data-layers="app,sdk,service,hal,selinux">
+      <div class="section-num">00 — 為什麼要做垂直切片</div>
+      <h2>應用層反哺框架層</h2>
+      <p style="color:var(--fog); max-width:60ch;">
+        十年的 Android 應用層開發經驗(Kotlin、MVVM、Jetpack Compose)
+        回答的是「裝置應該做什麼」。這個專案要補上另一半：
+        「平台實際上怎麼強制執行」。以下每個 milestone 都往下深入一層——
+        從一支可呼叫的 API，到系統服務，再到任何 App 都無法繞過的
+        HAL 與政策層。
+      </p>
+      <div class="arch-note">
+        <div class="mono">App → Manager SDK → SystemService → AIDL HAL → SELinux Policy → Kernel/Driver</div>
+      </div>
+
+      <div class="scope-note">
+        <b>範圍說明——</b>這是一個個人專案，在 Cuttlefish 虛擬裝置上建置與驗證，
+        內容涵蓋核心 AOSP 框架層工作(SystemService / HAL / SELinux)，
+        不包含 AAOS 專屬元件，例如 CarService 或 VHAL。
+      </div>
+
+      <a class="cta ghost" href="https://app.notion.com/p/shawnoo/AOSP-Framework-3a10e565be8e8021abb0df448e9eac2c" style="margin-top:14px; display:inline-flex;" target="_blank"> <span class="fillnote">查看程式碼異動</span></a>
+
+    </section>
+
+    <!-- MILESTONES -->
+    <section data-layers="service">
+      <div class="section-num">01 — 里程碑</div>
+      <h2 style="margin-bottom:36px;">從一個可綁定的服務，到一套政策平台</h2>
+
+      <div class="milestone" data-layers="service">
+        <div class="m-head">
+          <h3>M1 · SystemService 基礎建設</h3>
+          <span class="badge shipped">已驗證 · Cuttlefish</span>
+        </div>
+        <div class="tag-row">
+          <span class="tag">@SystemApi</span>
+          <span class="tag">Binder</span>
+          <span class="tag">SystemServer</span>
+        </div>
+
+        <div class="phase">
+          <div class="phase-label build">開發</div>
+          <ul>
+            <li>DeviceGuardService 以 <code>@SystemApi</code> 形式對外開放，開機時直接在 SystemServer 中註冊。</li>
+            <li>透過 Binder IPC 連接一個輕量的 Manager SDK，供 App 呼叫使用。</li>
+            <li>正式開發前，先用一個較小的練習專案(HelloService)驗證 SystemService 生命週期、fuzzer binding 註冊、以及 API snapshot 同步機制。</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證</div>
+          <p>建置後燒錄到 Cuttlefish；確認服務在 SystemServer 開機流程中正確啟動，並確認 Manager SDK 發出的 Binder 呼叫能正確來回。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">問題</div>
+          <ul>
+            <li>新增的 <code>@SystemApi</code> 介面觸發了 <code>UnflaggedApi</code> lint 檢查，直到正確宣告與標記後才通過，光是實作出來還不夠。</li>
+            <li><code>framework.jar</code> 的 API snapshot 驗證抓到與公開介面不一致的地方——這一關會在編譯階段就失敗，不會拖到執行期才出問題。</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="milestone" data-layers="hal,selinux">
+        <div class="m-head">
+          <h3>M2 · AIDL HAL + SELinux 雙閘門模型</h3>
+          <span class="badge shipped">已驗證 · Cuttlefish</span>
+        </div>
+        <div class="tag-row">
+          <span class="tag">AIDL HAL</span>
+          <span class="tag">SELinux</span>
+          <span class="tag">權限模型</span>
+        </div>
+
+        <div class="phase">
+          <div class="phase-label build">開發</div>
+          <p>AIDL HAL 邊界將框架層服務與硬體 / 政策執行層分隔開來。採用雙閘門執行模型：框架層權限檢查 <em>加上</em> SELinux domain/type 規則——單一層都無法單獨授予存取權限。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證</div>
+          <p>在 Cuttlefish 上分別測試兩道閘門——確認光靠框架層權限檢查不夠，必須搭配對應的 SELinux 規則；反之亦然。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">問題</div>
+          <p>一個 <code>avc: denied { find }</code> 錯誤，追查後發現是把 SELinux 政策裡的 <em>find</em>(查找)權限跟 <em>add</em>(註冊)權限搞混了——這兩者是各自獨立的授權，需要分開設定規則。</p>
+        </div>
+      </div>
+
+      <div class="milestone" data-layers="service">
+        <div class="m-head">
+          <h3>M3 · AMS 黑名單偵測</h3>
+          <span class="badge roadmap">進行中</span>
+        </div>
+        <div class="tag-row">
+          <span class="tag">IProcessObserver</span>
+          <span class="tag">PolicyStore</span>
+        </div>
+        <div class="phase">
+          <div class="phase-label build">開發(規劃中)</div>
+          <p>透過 <code>IProcessObserver</code> 偵測黑名單前景 App，並將結果送入共用的 PolicyStore，而非在本地各自處理。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證(規劃中)</div>
+          <p>在 Cuttlefish 上確認前景切換偵測的可靠性，同時不會對 ActivityManager 的 observer callback 造成明顯額外負擔。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">待解風險</div>
+          <p>大規模情境下 <code>IProcessObserver</code> 的呼叫頻率是目前最大的未知數。</p>
+        </div>
+      </div>
+
+      <div class="milestone" data-layers="service">
+        <div class="m-head">
+          <h3>M4 · WMS 浮層警告</h3>
+          <span class="badge roadmap">進行中</span>
+        </div>
+        <div class="tag-row">
+          <span class="tag">WindowManager</span>
+          <span class="tag">PolicyStore</span>
+        </div>
+        <div class="phase">
+          <div class="phase-label build">開發(規劃中)</div>
+          <p>當共用 PolicyStore 標記出前景違規時，透過 WindowManager 觸發系統浮層警告。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證(規劃中)</div>
+          <p>確認浮層遵守既有的視窗 z-order 與 focus 規則，不會擋住下層合法的系統 UI。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">待解風險</div>
+          <p>浮層渲染權限與其他正在運作中的系統浮層之間的 z-order 衝突。</p>
+        </div>
+      </div>
+
+      <div class="milestone" data-layers="service">
+        <div class="m-head">
+          <h3>M5 · PMS 安裝監控</h3>
+          <span class="badge roadmap">進行中</span>
+        </div>
+        <div class="tag-row">
+          <span class="tag">PackageManager</span>
+          <span class="tag">PolicyStore</span>
+        </div>
+        <div class="phase">
+          <div class="phase-label build">開發(規劃中)</div>
+          <p>透過 PackageManager callback 監控安裝行為，並比對 M3、M4 共用的同一份黑名單。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證(規劃中)</div>
+          <p>在 Cuttlefish 上驗證安裝時偵測的延遲與誤判率，比對共用的 PolicyStore。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">待解風險</div>
+          <p>安裝時檢查要夠快，才不會讓一般套件安裝出現明顯延遲。</p>
+        </div>
+
+        <div class="arch-note">
+          <div class="mono">shared PolicyStore ← setBlacklist (AIDL) ← {AMS, WMS, PMS}</div>
+          <p style="color:var(--fog); font-size:13.5px; margin:10px 0 0;">
+            M3–M5 設計上是一套共用的 policy store，統一透過單一 <code>setBlacklist</code> AIDL API 存取，
+            而不是三個各自獨立的 demo——重點在於跨子系統的一致性架構設計，而非三個一次性功能。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- BUILD ENVIRONMENT -->
+    <section data-layers="kernel">
+      <div class="section-num">02 — 建置環境</div>
+      <h2>實際跑在什麼環境上</h2>
+      <p style="color:var(--fog); max-width:60ch;">
+        在 Ubuntu 22.04 上 checkout 並從原始碼建置 AOSP，目標為
+        Android 14(<span class="mono" style="color:var(--paper);">android-14.0.0_r75</span>)、
+        <span class="mono" style="color:var(--paper);">aosp_cf_x86_64_phone</span> 設備，
+        以 Cuttlefish(<span class="mono" style="color:var(--paper);">launch_cvd</span>)作為
+        主要測試目標，並使用 ASfP(Android Studio for Platform)進行框架層開發。
+      </p>
+      <div class="env-grid">
+        <div class="env-item"><div class="k">環境問題</div><div class="v">建置主機的 libc6 版本不相容</div></div>
+        <div class="env-item"><div class="k">環境問題</div><div class="v">建置設定過程中 Bazel 劫持 PATH</div></div>
+        <div class="env-item"><div class="k">建置問題</div><div class="v">virtio-media 的 Rust 編譯錯誤</div></div>
+        <div class="env-item"><div class="k">測試目標</div><div class="v">Cuttlefish (aosp_cf_x86_64_phone)</div></div>
+      </div>
+    </section>
+
+    <!-- MIGRATION ANALYSIS -->
+    <section data-layers="service,hal">
+      <div class="section-num">03 — 向前看</div>
+      <h2>Android 15 → 16 遷移影響評估</h2>
+      <p style="color:var(--fog); max-width:60ch; margin-bottom:18px;">
+        在正式環境出問題之前，就該先讀懂 diff。以下是對本專案各模組的影響分析：
+      </p>
+      <ul class="detail">
+        <li>PackageManager — dexopt 時機點的變化。</li>
+        <li>WindowManager — 更嚴格的方向性(orientation)強制規則。</li>
+        <li>JobScheduler — 更緊縮的配額，影響背景排程的既有假設。</li>
+        <li>AVF / pKVM — 虛擬化範圍擴大，與未來 HAL 隔離設計相關。</li>
+      </ul>
+    </section>
+
+    <footer>
+      <div class="mono">DeviceGuardService — Android Framework / AOSP 作品集專案</div>
+      <p style="margin:10px 0 20px;">十年應用層開發經驗，現在反哺框架層。</p>
+      <a href="#" class="fill">[ https://www.linkedin.com/in/shawnhsu1/ ]</a>
+      <a href="#" class="fill">[ shawn.mingyuanhsu@gmail.com ]</a>
+    </footer>
+  </main>
+</div>
+
+<script>
+// --- terminal typing sequence ---
+const lines = [
+  {c:'I', t:'$ launch_cvd --daemon'},
+  {c:'I', t:'[SystemServer] DeviceGuardService: STARTED'},
+  {c:'E', t:'avc: denied { find } for service=deviceguard scontext=u:r:platform_app'},
+  {c:'W', t:'-> find and add are separate SELinux grants'},
+  {c:'I', t:'sepolicy: add hal_deviceguard to service_contexts'},
+  {c:'I', t:'[SystemServer] DeviceGuardService: bound, policy enforced'},
+];
+const body = document.getElementById('termBody');
+let li = 0, ci = 0;
+
+function typeLine(){
+  if(li >= lines.length){ 
+    setTimeout(()=>{ body.innerHTML=''; li=0; ci=0; typeLine(); }, 2200);
+    return;
+  }
+  const line = lines[li];
+  if(ci === 0){
+    const div = document.createElement('div');
+    div.className = 'ln';
+    div.innerHTML = `<span class="${line.c}">${line.c === 'I' ? 'D' : line.c}/</span><span class="txt"></span><span class="caret">&nbsp;</span>`;
+    body.appendChild(div);
+  }
+  const div = body.lastChild;
+  const txt = div.querySelector('.txt');
+  ci++;
+  txt.textContent = line.t.slice(0, ci);
+  if(ci <= line.t.length){
+    setTimeout(typeLine, 14 + Math.random()*18);
+  } else {
+    li++; ci=0;
+    setTimeout(typeLine, 420);
+  }
+}
+typeLine();
+
+// --- stack rail highlight on scroll ---
+const layers = document.querySelectorAll('.layer');
+const sections = document.querySelectorAll('main section, main .milestone');
+
+function setActive(names){
+  const set = new Set(names);
+  layers.forEach(l => {
+    l.classList.toggle('active', set.has(l.dataset.layer));
+  });
+}
+
+const io = new IntersectionObserver((entries)=>{
+  entries.forEach(entry=>{
+    if(entry.isIntersecting){
+      const layerAttr = entry.target.dataset.layers;
+      if(layerAttr) setActive(layerAttr.split(','));
+    }
+  });
+}, { rootMargin: '-40% 0px -50% 0px', threshold: 0 });
+
+sections.forEach(s => { if(s.dataset.layers) io.observe(s); });
+</script>
+
+</body>
+</html>
