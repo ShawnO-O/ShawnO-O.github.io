@@ -194,6 +194,23 @@
   .milestone{margin-bottom:56px;}
   .milestone:last-child{margin-bottom:0;}
 
+  .phase{margin-top:18px; padding-left:16px; border-left:2px solid var(--line);}
+  .phase-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    margin-bottom:8px;
+  }
+  .phase-label.build{color:var(--cyan);}
+  .phase-label.verify{color:var(--amber);}
+  .phase-label.issue{color:var(--red);}
+  .phase p, .phase ul{margin:0;}
+  .phase ul{padding-left:1.1em;}
+  .phase li{margin-bottom:6px; font-size:14.5px; color:var(--paper);}
+  .phase li::marker{color:var(--fog);}
+  .phase p{font-size:14.5px; color:var(--paper);}
+
   .arch-note{
     margin-top:26px;
     padding:20px;
@@ -307,11 +324,26 @@
           <span class="tag">Binder</span>
           <span class="tag">SystemServer</span>
         </div>
-        <ul class="detail">
-          <li>DeviceGuardService 以 <code>@SystemApi</code> 形式對外開放，開機時直接在 SystemServer 中註冊。</li>
-          <li>透過 Binder IPC 連接一個輕量的 Manager SDK，供 App 呼叫使用。</li>
-          <li>正式開發前，先用一個較小的練習專案(HelloService)驗證 SystemService 生命週期、fuzzer binding 註冊、以及 API snapshot 同步機制。</li>
-        </ul>
+
+        <div class="phase">
+          <div class="phase-label build">開發</div>
+          <ul>
+            <li>DeviceGuardService 以 <code>@SystemApi</code> 形式對外開放，開機時直接在 SystemServer 中註冊。</li>
+            <li>透過 Binder IPC 連接一個輕量的 Manager SDK，供 App 呼叫使用。</li>
+            <li>正式開發前，先用一個較小的練習專案(HelloService)驗證 SystemService 生命週期、fuzzer binding 註冊、以及 API snapshot 同步機制。</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證</div>
+          <p>建置後燒錄到 Cuttlefish；確認服務在 SystemServer 開機流程中正確啟動，並確認 Manager SDK 發出的 Binder 呼叫能正確來回。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">問題</div>
+          <ul>
+            <li>新增的 <code>@SystemApi</code> 介面觸發了 <code>UnflaggedApi</code> lint 檢查，直到正確宣告與標記後才通過，光是實作出來還不夠。</li>
+            <li><code>framework.jar</code> 的 API snapshot 驗證抓到與公開介面不一致的地方——這一關會在編譯階段就失敗，不會拖到執行期才出問題。</li>
+          </ul>
+        </div>
       </div>
 
       <div class="milestone" data-layers="hal,selinux">
@@ -324,65 +356,102 @@
           <span class="tag">SELinux</span>
           <span class="tag">權限模型</span>
         </div>
-        <ul class="detail">
-          <li>AIDL HAL 邊界將框架層服務與硬體 / 政策執行層分隔開來。</li>
-          <li>採用雙閘門執行模型：框架層權限檢查 <em>加上</em> SELinux domain/type 規則——單一層都無法單獨授予存取權限。</li>
-        </ul>
-        <div class="note"><b>除錯筆記——</b>一個 <code>avc: denied</code> 錯誤，追查後發現是把 SELinux 政策裡的 <em>find</em>(查找)權限跟 <em>add</em>(註冊)權限搞混了；這兩者是各自獨立的授權，需要分開設定規則。</div>
+
+        <div class="phase">
+          <div class="phase-label build">開發</div>
+          <p>AIDL HAL 邊界將框架層服務與硬體 / 政策執行層分隔開來。採用雙閘門執行模型：框架層權限檢查 <em>加上</em> SELinux domain/type 規則——單一層都無法單獨授予存取權限。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證</div>
+          <p>在 Cuttlefish 上分別測試兩道閘門——確認光靠框架層權限檢查不夠，必須搭配對應的 SELinux 規則；反之亦然。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">問題</div>
+          <p>一個 <code>avc: denied { find }</code> 錯誤，追查後發現是把 SELinux 政策裡的 <em>find</em>(查找)權限跟 <em>add</em>(註冊)權限搞混了——這兩者是各自獨立的授權，需要分開設定規則。</p>
+        </div>
       </div>
 
       <div class="milestone" data-layers="service">
         <div class="m-head">
-          <h3>M3–M5 · AMS / WMS / PMS 三部曲</h3>
+          <h3>M3 · AMS 黑名單偵測</h3>
           <span class="badge roadmap">進行中</span>
         </div>
         <div class="tag-row">
           <span class="tag">IProcessObserver</span>
+          <span class="tag">PolicyStore</span>
+        </div>
+        <div class="phase">
+          <div class="phase-label build">開發(規劃中)</div>
+          <p>透過 <code>IProcessObserver</code> 偵測黑名單前景 App，並將結果送入共用的 PolicyStore，而非在本地各自處理。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證(規劃中)</div>
+          <p>在 Cuttlefish 上確認前景切換偵測的可靠性，同時不會對 ActivityManager 的 observer callback 造成明顯額外負擔。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">待解風險</div>
+          <p>大規模情境下 <code>IProcessObserver</code> 的呼叫頻率是目前最大的未知數。</p>
+        </div>
+      </div>
+
+      <div class="milestone" data-layers="service">
+        <div class="m-head">
+          <h3>M4 · WMS 浮層警告</h3>
+          <span class="badge roadmap">進行中</span>
+        </div>
+        <div class="tag-row">
           <span class="tag">WindowManager</span>
+          <span class="tag">PolicyStore</span>
+        </div>
+        <div class="phase">
+          <div class="phase-label build">開發(規劃中)</div>
+          <p>當共用 PolicyStore 標記出前景違規時，透過 WindowManager 觸發系統浮層警告。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證(規劃中)</div>
+          <p>確認浮層遵守既有的視窗 z-order 與 focus 規則，不會擋住下層合法的系統 UI。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">待解風險</div>
+          <p>浮層渲染權限與其他正在運作中的系統浮層之間的 z-order 衝突。</p>
+        </div>
+      </div>
+
+      <div class="milestone" data-layers="service">
+        <div class="m-head">
+          <h3>M5 · PMS 安裝監控</h3>
+          <span class="badge roadmap">進行中</span>
+        </div>
+        <div class="tag-row">
           <span class="tag">PackageManager</span>
           <span class="tag">PolicyStore</span>
         </div>
-        <ul class="detail">
-          <li><b>M3</b> — 透過 <code>IProcessObserver</code> 偵測黑名單前景 App(AMS)。</li>
-          <li><b>M4</b> — 透過 WindowManager 觸發系統浮層警告(WMS)。</li>
-          <li><b>M5</b> — 透過 PackageManager 監控安裝行為(PMS)。</li>
-        </ul>
+        <div class="phase">
+          <div class="phase-label build">開發(規劃中)</div>
+          <p>透過 PackageManager callback 監控安裝行為，並比對 M3、M4 共用的同一份黑名單。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label verify">驗證(規劃中)</div>
+          <p>在 Cuttlefish 上驗證安裝時偵測的延遲與誤判率，比對共用的 PolicyStore。</p>
+        </div>
+        <div class="phase">
+          <div class="phase-label issue">待解風險</div>
+          <p>安裝時檢查要夠快，才不會讓一般套件安裝出現明顯延遲。</p>
+        </div>
+
         <div class="arch-note">
           <div class="mono">shared PolicyStore ← setBlacklist (AIDL) ← {AMS, WMS, PMS}</div>
           <p style="color:var(--fog); font-size:13.5px; margin:10px 0 0;">
-            設計上是一套共用的 policy store，統一透過單一 <code>setBlacklist</code> AIDL API 存取，
+            M3–M5 設計上是一套共用的 policy store，統一透過單一 <code>setBlacklist</code> AIDL API 存取，
             而不是三個各自獨立的 demo——重點在於跨子系統的一致性架構設計，而非三個一次性功能。
           </p>
         </div>
       </div>
     </section>
 
-    <!-- DEBUG DEEP DIVES -->
-    <section data-layers="hal,selinux">
-      <div class="section-num">02 — 除錯紀錄</div>
-      <h2>真正學到東西的地方</h2>
-      <div class="log-grid">
-        <div class="log-card">
-          <div class="tag-line">avc: denied { find }</div>
-          <h3>SELinux find 與 add 的差異</h3>
-          <p>服務查找(lookup)與服務註冊(registration)由不同的 SELinux 權限管控——只修好其中一個，另一個情境下仍會重現拒絕存取的錯誤。</p>
-        </div>
-        <div class="log-card">
-          <div class="tag-line">UnflaggedApi</div>
-          <h3>新增 SystemApi 介面 vs. lint 檢查</h3>
-          <p>新增一個 <code>@SystemApi</code> 介面會觸發 API flagging lint 檢查，除非該介面被正確宣告與標記，光是實作出來還不夠。</p>
-        </div>
-        <div class="log-card">
-          <div class="tag-line">framework.jar</div>
-          <h3>API snapshot 驗證</h3>
-          <p>框架層 API 的變更會對照公開介面的 snapshot 進行檢查——不一致會在編譯階段就失敗，而不是等到執行期才出問題。</p>
-        </div>
-      </div>
-    </section>
-
     <!-- BUILD ENVIRONMENT -->
     <section data-layers="kernel">
-      <div class="section-num">03 — 建置環境</div>
+      <div class="section-num">02 — 建置環境</div>
       <h2>實際跑在什麼環境上</h2>
       <p style="color:var(--fog); max-width:60ch;">
         在 Ubuntu 22.04 上 checkout 並從原始碼建置 AOSP，目標為
@@ -401,7 +470,7 @@
 
     <!-- MIGRATION ANALYSIS -->
     <section data-layers="service,hal">
-      <div class="section-num">04 — 向前看</div>
+      <div class="section-num">03 — 向前看</div>
       <h2>Android 15 → 16 遷移影響評估</h2>
       <p style="color:var(--fog); max-width:60ch; margin-bottom:18px;">
         在正式環境出問題之前，就該先讀懂 diff。以下是對本專案各模組的影響分析：
